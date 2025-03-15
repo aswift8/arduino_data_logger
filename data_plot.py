@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 
 if __name__ == "__main__":
-    data = data_util.read_data("data/20250314-233630-dat2.csv")
+    data = data_util.read_data("data/BINARY_DATA.dat")
     ts = data["timestamp"]
     fig, ax = plt.subplots(4, 1)
     la, = ax[0].plot(ts, data["analog"])
