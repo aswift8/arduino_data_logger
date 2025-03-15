@@ -13,7 +13,7 @@ Arduino
 Python
 - [`PySerial`](https://pyserial.readthedocs.io/en/latest/pyserial.html)
 - [`numpy`](https://numpy.org/)
-- [`matplotlib`](https://matplotlib.org/)
+- [`matplotlib`](https://matplotlib.org/) (used in `data_plot.py` demo)
 
 
 ### User Instructions
