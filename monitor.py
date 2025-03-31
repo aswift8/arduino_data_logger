@@ -18,6 +18,7 @@ byte_message      = 0
 byte_data_start   = 1
 byte_data_element = 2
 byte_data_end     = 3
+byte_heartbeat    = 250
 byte_error        = 255
 
 
@@ -94,7 +95,7 @@ class SerialMonitor:
         cb_disconnect(string)       Connection lost
         cb_error()                  Device error
     """
-    def __init__(self, cb_msg, cb_data, cb_data_start, cb_data_end, cb_disconnect, cb_error):
+    def __init__(self, cb_msg, cb_data, cb_data_start, cb_data_end, cb_disconnect, cb_heartbeat, cb_error):
         self.connected = False
         self.do_run = False
         self.cb_msg = cb_msg
@@ -102,6 +103,7 @@ class SerialMonitor:
         self.cb_data_start = cb_data_start
         self.cb_data_end = cb_data_end
         self.cb_disconnect = cb_disconnect
+        self.cb_heartbeat = cb_heartbeat
         self.cb_error = cb_error
         self.send_queue = queue.Queue()
 
@@ -134,6 +136,9 @@ class SerialMonitor:
                         elif b[0] == byte_data_end:
                             # End of data stream
                             self.cb_data_end()
+                        elif b[0] == byte_heartbeat:
+                            # Heartbeat
+                            self.cb_heartbeat()
                         elif b[0] == byte_error:
                             self.cb_error()
                             break
@@ -174,7 +179,7 @@ class SerialMonitor:
     """
     def disconnect(self):
         self.do_run = False
-        if (self.is_connected()):
+        if self.is_connected():
             self.thr_loop.join()
             print("Serial communication loop exited")
     
@@ -202,7 +207,7 @@ class App:
     def __init__(self):
         self.do_display_data = True
         
-        self.sm = SerialMonitor(self.on_serial_msg, self.on_serial_data, self.on_serial_data_start, self.on_serial_data_end, self.on_serial_disconnect, self.on_serial_error)
+        self.sm = SerialMonitor(self.on_serial_msg, self.on_serial_data, self.on_serial_data_start, self.on_serial_data_end, self.on_serial_disconnect, self.on_serial_heartbeat, self.on_serial_error)
         self.dscw = DataStreamDatWriter()
         # --- Create UI ---
         root = tk.Tk()
@@ -211,7 +216,7 @@ class App:
         root.title("Serial Monitor")
         f = tk.Frame(root)
         f.grid()
-        element_rows = 9
+        element_rows = 10
         for i in range(3):              # Make first 3 columns equal width
             f.grid_columnconfigure(i, weight=1, uniform="column")
         for i in range(element_rows):   # Make rows equal height
@@ -250,6 +255,13 @@ class App:
         self.dir_e.grid(column=1, row=9, columnspan=2, sticky="ew")
         self.dir_e.insert(0, "data/")
         
+        # Connection monitor
+        tk.Label(f, text="  Connection:", anchor="w").grid(row=10, column=0, sticky="ew")
+        self.heartbeat_sv = tk.StringVar(root)
+        self.heartbeat_l = tk.Label(f, textvariable=self.heartbeat_sv)
+        self.heartbeat_l.grid(row=10, column=2, sticky="ew")
+        self.data_time_last = time.time()
+        
         # Message output console
         self.console_st = scrolledtext.ScrolledText(f, width=90, height=32, state="disabled")
         self.console_st.grid(row=0, column=3, rowspan=element_rows+2)
@@ -264,6 +276,7 @@ class App:
     
     # Self-invoking function that updates ScrolledText
     def refresh_ui(self):
+        # Update console
         if not self.display_queue.empty():
             self.console_st.configure(state="normal")
             while not self.display_queue.empty():
@@ -271,6 +284,18 @@ class App:
                 self.console_st.insert(tk.INSERT, f"{msg}")
             self.console_st.configure(state="disabled")
             self.console_st.yview(tk.END)
+        # Update heartbeat monitor
+        if self.sm.is_connected():
+            time_since_data = time.time() - self.data_time_last
+            if time_since_data > 1:
+                self.heartbeat_l.config(fg='red')
+            else:
+                self.heartbeat_l.config(fg='green')
+            self.heartbeat_sv.set(f"{time_since_data:.2f}")
+        else:
+            self.heartbeat_sv.set("n/a")
+            self.heartbeat_l.config(fg='red')
+        # Refresh again after delay
         self.root.after(50, self.refresh_ui)
     
     # Invoked when UI closed
@@ -301,7 +326,7 @@ class App:
     
     # Callback for Disconnect
     def disconnect_from_device(self):
-        if (self.sm.is_connected()):
+        if self.sm.is_connected():
             self.sm.disconnect()
             self.display_queue.put("=== DISCONNECTED ===\n")
             self.dscw.end()
@@ -337,11 +362,13 @@ class App:
     # Callback for message
     def on_serial_msg(self, msg):
         self.display_queue.put(msg)
+        self.any_data()
     
     # Callback for data stream start - start DataStreamDatWriter
     def on_serial_data_start(self):
         self.display_queue.put("=== DATA START ===\n")
         self.dscw.start(self.dir_e.get())
+        self.any_data()
     
     # Callback for data element - write to DataStreamDatWriter, and to console if not suppressed
     def on_serial_data(self, data):
@@ -350,22 +377,32 @@ class App:
             vals_pretty = data_util.values_to_str(vals)
             self.display_queue.put(f"{vals_pretty}\n")
         self.dscw.write(data)
+        self.any_data()
     
     # Callback for data stream end - end DataStreamDatWriter and remove console data display suppression
     def on_serial_data_end(self):
         self.display_queue.put("=== DATA END ===\n")
         self.dscw.end()
         self.do_display_data = True
+        self.any_data()
     
     # Callback for disconnection, display reason
     def on_serial_disconnect(self, disconnect_str):
         self.display_queue.put(f"=== DISCONNECTED [{disconnect_str}] ===\n")
         self.dscw.end()
     
+    # Callback for heartbeat
+    def on_serial_heartbeat(self):
+        self.any_data()
+    
     # Callback for device error
     def on_serial_error(self):
         self.display_queue.put("=== INTERNAL ERROR ===\n")
         self.dscw.end()
+    
+    # Called when any data is received
+    def any_data(self):
+        self.data_time_last = time.time()
 
 
 if __name__ == "__main__":

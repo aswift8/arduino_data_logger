@@ -97,6 +97,9 @@ Note:
 #define PIN_BTN_0     2
 #define PIN_BTN_1     3
 
+// Loops between heartbeat
+#define HEARTBEAT_COUNT 500
+
 
 // Supports FAT16/32 (SD cards up to 32GB)
 typedef SdFat32 Sd_;
@@ -164,6 +167,7 @@ enum State current_state = E_STATE_WAITING;
  ***********************/
 
 struct Data current_data;
+uint16_t heartbeat_loop_counter = 0;
 
 
 /***********************
@@ -205,6 +209,10 @@ void setup() {
 void loop() {
   HandleCommand();
   HandleState();
+  if (++heartbeat_loop_counter > HEARTBEAT_COUNT) {
+    SendHeartbeat();
+    heartbeat_loop_counter = 0;
+  }
 }
 
 

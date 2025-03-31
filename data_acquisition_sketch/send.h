@@ -13,6 +13,7 @@
 #define BYTE_DATA_START   byte(1)
 #define BYTE_DATA_ELEMENT byte(2)
 #define BYTE_DATA_END     byte(3)
+#define BYTE_HEARTBEAT    byte(250)
 #define BYTE_ERROR        byte(255)
 
 
@@ -63,6 +64,10 @@ void SendData(const struct Data &dat) {
 // Send BYTE_DATA_END
 void SendDataEnd() {
   Serial.write(BYTE_DATA_END);
+}
+
+void SendHeartbeat() {
+  Serial.write(BYTE_HEARTBEAT);
 }
 
 #endif
