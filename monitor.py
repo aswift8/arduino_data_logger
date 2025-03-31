@@ -209,6 +209,7 @@ class App:
         
         self.sm = SerialMonitor(self.on_serial_msg, self.on_serial_data, self.on_serial_data_start, self.on_serial_data_end, self.on_serial_disconnect, self.on_serial_heartbeat, self.on_serial_error)
         self.dscw = DataStreamDatWriter()
+        
         # --- Create UI ---
         root = tk.Tk()
         self.root = root
@@ -216,65 +217,75 @@ class App:
         root.title("Serial Monitor")
         f = tk.Frame(root)
         f.grid()
-        element_rows = 10
+        row = 0
+        
+        # Connection
+        self.port_sv = tk.StringVar(root)
+        self.port_om = tk.OptionMenu(f, self.port_sv, "")
+        self.refresh_devices()
+        self.port_om.grid(row=row, column=0, columnspan=3, sticky="ew")
+        row += 1
+        tk.Button(f, text="Connect", command=self.connect_to_device).grid(row=row, column=0, sticky="ew")
+        tk.Button(f, text="Refresh", command=self.refresh_devices).grid(row=row, column=1, sticky="ew")
+        tk.Button(f, text="Disconnect", command=self.disconnect_from_device).grid(row=row, column=2, sticky="ew")
+        # Connection status
+        row += 1
+        tk.Label(f, text="  Connection Life:", anchor="w").grid(row=row, column=0, columnspan=2, sticky="ew")
+        self.heartbeat_sv = tk.StringVar(root)
+        self.heartbeat_l = tk.Label(f, textvariable=self.heartbeat_sv)
+        self.heartbeat_l.grid(row=row, column=2, sticky="ew")
+        self.data_time_last = time.time()
+        
+        # Manual commands
+        row += 2
+        tk.Label(f, text="  Command:", anchor="w").grid(column=0, row=row, sticky="ew")
+        self.send_e = tk.Entry(f, width=16)
+        self.send_e.grid(column=1, row=row, columnspan=2, sticky="ew")
+        self.send_e.bind("<Return>", self.send_manual_command)
+        
+        # Data commands
+        row += 2
+        tk.Button(f, text="Start", command=lambda:self.send_command("START")).grid(row=row, column=0, sticky="ew")
+        tk.Button(f, text="Stop", command=lambda:self.send_command("STOP")).grid(row=row, column=1, sticky="ew")
+        tk.Button(f, text="Test", command=self.send_command_test).grid(row=row, column=2, sticky="ew")
+        
+        # File commands
+        row += 2
+        tk.Button(f, text="List", command=lambda:self.send_command("LIST")).grid(row=row, column=0, sticky="ew")
+        tk.Button(f, text="Read", command=self.send_command_read).grid(row=row, column=1, sticky="ew")
+        tk.Button(f, text="Delete", command=self.send_command_delete).grid(row=row, column=2, sticky="ew")
+        row += 1
+        tk.Label(f, text="  SD File:", anchor="w").grid(row=row, column=0, sticky="ew")
+        self.file_e = tk.Entry(f, width=16)
+        self.file_e.grid(column=1, row=row, columnspan=2, sticky="ew")
+        row += 1
+        tk.Label(f, text="  Output Dir:", anchor="w").grid(row=row, column=0, sticky="ew")
+        self.dir_e = tk.Entry(f, width=16)
+        self.dir_e.grid(column=1, row=row, columnspan=2, sticky="ew")
+        self.dir_e.insert(0, "data/")
+        
+        # Make rows and columns uniform
+        element_rows = row
         for i in range(3):              # Make first 3 columns equal width
             f.grid_columnconfigure(i, weight=1, uniform="column")
         for i in range(element_rows):   # Make rows equal height
             f.grid_rowconfigure(i, weight=0, uniform="row")
         f.grid_rowconfigure(element_rows + 1, weight=1)
         
-        # Connection
-        self.port_sv = tk.StringVar(root)
-        self.port_om = tk.OptionMenu(f, self.port_sv, "")
-        self.refresh_devices()
-        self.port_om.grid(row=0, column=0, columnspan=3, sticky="ew")
-        tk.Button(f, text="Connect", command=self.connect_to_device).grid(row=1, column=0, sticky="ew")
-        tk.Button(f, text="Refresh", command=self.refresh_devices).grid(row=1, column=1, sticky="ew")
-        tk.Button(f, text="Disconnect", command=self.disconnect_from_device).grid(column=2, row=1, sticky="ew")
-        
-        # Manual commands
-        tk.Label(f, text="  Command:", anchor="w").grid(column=0, row=3, sticky="ew")
-        self.send_e = tk.Entry(f, width=16)
-        self.send_e.grid(column=1, row=3, columnspan=2, sticky="ew")
-        self.send_e.bind("<Return>", self.send_manual_command)
-        
-        # Data commands
-        tk.Button(f, text="Start", command=lambda:self.send_command("START")).grid(row=5, column=0, sticky="ew")
-        tk.Button(f, text="Stop", command=lambda:self.send_command("STOP")).grid(row=5, column=1, sticky="ew")
-        tk.Button(f, text="Test", command=self.send_command_test).grid(row=5, column=2, sticky="ew")
-        
-        # File commands
-        tk.Button(f, text="List", command=lambda:self.send_command("LIST")).grid(row=7, column=0, sticky="ew")
-        tk.Button(f, text="Read", command=self.send_command_read).grid(row=7, column=1, sticky="ew")
-        tk.Button(f, text="Delete", command=self.send_command_delete).grid(row=7, column=2, sticky="ew")
-        tk.Label(f, text="  SD File:", anchor="w").grid(row=8, column=0, sticky="ew")
-        self.file_e = tk.Entry(f, width=16)
-        self.file_e.grid(column=1, row=8, columnspan=2, sticky="ew")
-        tk.Label(f, text="  Output Dir:", anchor="w").grid(row=9, column=0, sticky="ew")
-        self.dir_e = tk.Entry(f, width=16)
-        self.dir_e.grid(column=1, row=9, columnspan=2, sticky="ew")
-        self.dir_e.insert(0, "data/")
-        
-        # Connection monitor
-        tk.Label(f, text="  Connection:", anchor="w").grid(row=10, column=0, sticky="ew")
-        self.heartbeat_sv = tk.StringVar(root)
-        self.heartbeat_l = tk.Label(f, textvariable=self.heartbeat_sv)
-        self.heartbeat_l.grid(row=10, column=2, sticky="ew")
-        self.data_time_last = time.time()
-        
         # Message output console
         self.console_st = scrolledtext.ScrolledText(f, width=90, height=32, state="disabled")
         self.console_st.grid(row=0, column=3, rowspan=element_rows+2)
         self.display_queue = queue.Queue()
         
-        # Run UI
+        
+        # --- Run UI ---
         try:
             self.refresh_ui()       # Calls itself with delay
             root.mainloop()
         except KeyboardInterrupt:
             self.sm.disconnect()
     
-    # Self-invoking function that updates ScrolledText
+    # Self-invoking function to update UI
     def refresh_ui(self):
         # Update console
         if not self.display_queue.empty():
@@ -306,10 +317,12 @@ class App:
     # Callback for Refresh
     def refresh_devices(self):
         ports = serial.tools.list_ports.comports()
+        # Filter out virtual terminals
         valid_ports = [p.device for p in ports if p.name[0:4] != "ttyS"]
         if len(valid_ports) == 0:
             valid_ports.append("No devices detected")
         self.port_sv.set(valid_ports[0])
+        # Remove previous options, add new options
         self.port_om["menu"].delete(0, tk.END)
         for p in valid_ports:
             self.port_om["menu"].add_command(label=p, command=tk._setit(self.port_sv, p))
