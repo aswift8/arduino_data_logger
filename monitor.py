@@ -21,6 +21,8 @@ byte_data_end     = 3
 byte_heartbeat    = 250
 byte_error        = 255
 
+connection_status_warning_time = 2
+
 
 """
 Write binary data to file.
@@ -298,7 +300,7 @@ class App:
         # Update heartbeat monitor
         if self.sm.is_connected():
             time_since_data = time.time() - self.data_time_last
-            if time_since_data > 1:
+            if time_since_data > connection_status_warning_time:
                 self.heartbeat_l.config(fg='red')
             else:
                 self.heartbeat_l.config(fg='green')
@@ -329,6 +331,7 @@ class App:
     
     # Callback for Connect
     def connect_to_device(self):
+        self.any_data()
         self.sm.disconnect()
         p = self.port_sv.get()
         self.sm.connect(p, 1000000)
