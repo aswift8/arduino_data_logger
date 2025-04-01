@@ -6,6 +6,10 @@ import tkinter as tk
 from tkinter import scrolledtext
 import threading
 import queue
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+import matplotlib.animation as animation
+import numpy as np
 # Data
 import data_util
 # File naming
@@ -277,8 +281,44 @@ class App:
         # Message output console
         self.console_st = scrolledtext.ScrolledText(f, width=90, height=32, state="disabled")
         self.console_st.grid(row=0, column=3, rowspan=element_rows+2)
+        self.console_st.bind("<Button-1>", lambda event:"break")
+        self.console_st.bind("<B1-Motion>", lambda event:"break")
         self.display_queue = queue.Queue()
         
+        # Sensor data graph
+        self.fig = Figure()
+        self.graph_canvas = FigureCanvasTkAgg(self.fig, master=root)
+        self.graph_canvas.draw()
+        self.graph_canvas.get_tk_widget().grid(row=0, column=4, rowspan=element_rows+2, sticky="nsew")
+        self.anim_axs = self.fig.subplots(4,1)
+        self.anim_axs[0].set_ylim(-0.2, 5.2)
+        self.anim_axs[1].set_ylim(-0.1, 1.1)
+        self.anim_axs[2].set_ylim(-15,15)
+        self.anim_axs[3].set_ylim(-5,5)
+        self.anim_analog, = self.anim_axs[0].plot([], [])
+        self.anim_btn_0, = self.anim_axs[1].plot([], [])
+        self.anim_btn_1, = self.anim_axs[1].plot([], [])
+        self.anim_acc_x, = self.anim_axs[2].plot([], [])
+        self.anim_acc_y, = self.anim_axs[2].plot([], [])
+        self.anim_acc_z, = self.anim_axs[2].plot([], [])
+        self.anim_gyro_x, = self.anim_axs[3].plot([], [])
+        self.anim_gyro_y, = self.anim_axs[3].plot([], [])
+        self.anim_gyro_z, = self.anim_axs[3].plot([], [])
+        self.anim_analog.set_label("analog")
+        self.anim_btn_0.set_label("btn 0")
+        self.anim_btn_1.set_label("btn 1")
+        self.anim_acc_x.set_label("acc x")
+        self.anim_acc_y.set_label("acc y")
+        self.anim_acc_z.set_label("acc z")
+        self.anim_gyro_x.set_label("gyro x")
+        self.anim_gyro_y.set_label("gyro y")
+        self.anim_gyro_z.set_label("gyro z")
+        for i in range(4):
+            self.anim_axs[i].legend()
+        self.plot_data_max = 5000
+        self.plot_data = np.empty((10, self.plot_data_max))
+        self.plot_data_i = 0
+        self.anim = animation.FuncAnimation(self.fig, lambda i:self.graph_animate(i), len(self.plot_data), interval=50, blit=True)
         
         # --- Run UI ---
         try:
@@ -385,14 +425,24 @@ class App:
         self.display_queue.put("=== DATA START ===\n")
         self.dscw.start(self.dir_e.get())
         self.any_data()
+        self.plot_data_i = 0
     
     # Callback for data element - write to DataStreamDatWriter, and to console if not suppressed
     def on_serial_data(self, data):
         if self.do_display_data:
+            # Print to console
             vals = data_util.bytes_to_values(data)
             vals_pretty = data_util.values_to_str(vals)
             self.display_queue.put(f"{vals_pretty}\n")
+            # Display on graph
+            if self.plot_data_i >= self.plot_data_max:
+                self.plot_data_i = self.plot_data_max // 3
+                self.plot_data[:,:self.plot_data_i] = self.plot_data[:,-self.plot_data_i:]
+            self.plot_data[:,self.plot_data_i] = vals
+            self.plot_data_i += 1
+        # Save to file
         self.dscw.write(data)
+        # Update connection monitor
         self.any_data()
     
     # Callback for data stream end - end DataStreamDatWriter and remove console data display suppression
@@ -419,6 +469,23 @@ class App:
     # Called when any data is received
     def any_data(self):
         self.data_time_last = time.time()
+    
+    def graph_animate(self, i):
+        # Draw new lines
+        pd = self.plot_data[:,:self.plot_data_i]
+        ts = range(self.plot_data_i)
+        self.anim_analog.set_data(ts, pd[1,:])
+        self.anim_btn_0.set_data(ts, pd[2,:])
+        self.anim_btn_1.set_data(ts, pd[3,:])
+        self.anim_acc_x.set_data(ts, pd[4,:])
+        self.anim_acc_y.set_data(ts, pd[5,:])
+        self.anim_acc_z.set_data(ts, pd[6,:])
+        self.anim_gyro_x.set_data(ts, pd[7,:])
+        self.anim_gyro_y.set_data(ts, pd[8,:])
+        self.anim_gyro_z.set_data(ts, pd[9,:])
+        for i in range(4):
+            self.anim_axs[i].set_xlim(0, self.plot_data_max)
+        return self.anim_analog, self.anim_btn_0, self.anim_btn_1, self.anim_acc_x, self.anim_acc_y, self.anim_acc_z, self.anim_gyro_x, self.anim_gyro_y, self.anim_gyro_z
 
 
 if __name__ == "__main__":
